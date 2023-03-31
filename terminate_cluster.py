@@ -6,7 +6,8 @@ from typing import Any
 from cloud_manager.ec2_manager import EC2Manager
 from util.aws_config_util import parse_aws_config_file
 from util.logging_util import load_logger, log_message
-from util.sparking_cloud_util import parse_sparking_cloud_config_file
+from util.sparking_cloud_util import parse_sparking_cloud_config_file, read_instances_file, \
+    generate_cluster_instances_summary, print_cluster_instances_summary
 
 
 class ClusterTerminator:
@@ -31,35 +32,6 @@ class ClusterTerminator:
                       attribute_name: str) -> Any:
         return getattr(self, attribute_name)
 
-    def read_instances_file(self,
-                            cluster_name: str) -> list:
-        instances_file_root_folder = self.get_attribute("general_settings")["cluster_instances_root_folder"]
-        instances_file = Path(instances_file_root_folder).joinpath(cluster_name)
-        instances_list_parser = ConfigParser()
-        instances_list_parser.optionxform = str
-        instances_list_parser.read(filenames=instances_file,
-                                   encoding="utf-8")
-        instances_list = []
-        for section in instances_list_parser.sections():
-            if "Instance" in section:
-                instance_provider = instances_list_parser.get(section, "provider")
-                instance_name = instances_list_parser.get(section, "name")
-                instance_id = instances_list_parser.get(section, "id")
-                instance_key_name = instances_list_parser.get(section, "key_name")
-                instance_username = instances_list_parser.get(section, "username")
-                instance_public_ipv4_address = instances_list_parser.get(section, "public_ipv4_address")
-                instance_ssh_port = instances_list_parser.get(section, "ssh_port")
-                instance_dict = {"provider": instance_provider,
-                                 "name": instance_name,
-                                 "id": instance_id,
-                                 "key_name": instance_key_name,
-                                 "username": instance_username,
-                                 "public_ipv4_address": instance_public_ipv4_address,
-                                 "ssh_port": instance_ssh_port}
-                instances_list.append(instance_dict)
-        del instances_list_parser
-        return instances_list
-
     def terminate_ec2_instances(self,
                                 cluster_name: str,
                                 instances_list: list,
@@ -75,27 +47,25 @@ class ClusterTerminator:
             ec2m.terminate_ec2_instances_list(active_ec2_instances_ids_list)
             logger = self.get_attribute("logger")
             if number_of_active_ec2_instances == 1:
-                message = "{0} EC2 Instance of '{1}' was terminated." \
+                message = "{0} EC2 Instance of '{1}' received termination request." \
                     .format(number_of_active_ec2_instances, cluster_name)
             else:
-                message = "{0} EC2 Instances of '{1}' were terminated." \
+                message = "{0} EC2 Instances of '{1}' received termination request." \
                     .format(number_of_active_ec2_instances, cluster_name)
             log_message(logger, message, "INFO")
 
     def terminate_cluster_tasks(self,
                                 cluster_name: str,
                                 ec2m: EC2Manager) -> None:
-        # Get Logger.
-        logger = self.get_attribute("logger")
+        # Get Clusters Instances Root Folder.
+        cluster_instances_root_folder = self.get_attribute("general_settings")["cluster_instances_root_folder"]
+        # Get Cluster Instances File.
+        cluster_instances_file = Path(cluster_instances_root_folder).joinpath(cluster_name)
         # Read Cluster's Instances File.
-        instances_list = self.read_instances_file(cluster_name)
-        message = "Terminating the Cluster '{0}'...".format(cluster_name)
-        log_message(logger, message, "INFO")
+        instances_list = read_instances_file(cluster_instances_file)
         # Terminate EC2 Instances (If Any Belongs to the Cluster).
         if ec2m:
             self.terminate_ec2_instances(cluster_name, instances_list, ec2m)
-        message = "The Cluster '{0}' was terminated successfully!".format(cluster_name)
-        log_message(logger, message, "INFO")
 
     def parallel_terminate_clusters(self,
                                     cluster_names: list) -> None:
@@ -115,30 +85,38 @@ class ClusterTerminator:
             ec2m = EC2Manager(service_name=aws_service, region_name=aws_region)
         with ThreadPoolExecutor(max_workers=number_of_clusters) as thread_pool_executor:
             for cluster_name in cluster_names:
-                thread_pool_executor.submit(self.terminate_cluster_tasks,
-                                            cluster_name,
-                                            ec2m)
+                # Get Logger.
+                logger = self.get_attribute("logger")
+                # Get Clusters Instances Root Folder.
+                cluster_instances_root_folder = self.get_attribute("general_settings")["cluster_instances_root_folder"]
+                # Get Cluster Instances File.
+                cluster_instances_file = Path(cluster_instances_root_folder).joinpath(cluster_name)
+                message = "Terminating the Cluster '{0}'...".format(cluster_name)
+                log_message(logger, message, "INFO")
+                future = thread_pool_executor.submit(self.terminate_cluster_tasks,
+                                                     cluster_name,
+                                                     ec2m)
+                exception = future.exception()
+                if exception:
+                    exit(exception)
+                message = "The Cluster '{0}' was terminated successfully!".format(cluster_name)
+                log_message(logger, message, "INFO")
+                # Read the Cluster's Instances File.
+                instances_list = read_instances_file(cluster_instances_file)
+                # Generate the Cluster Instances Summary (All Providers).
+                cluster_instances_summary = generate_cluster_instances_summary(instances_list, ec2m)
+                # Print the Recently Terminated Cluster Instances Summary.
+                print_cluster_instances_summary(cluster_name,
+                                                cluster_instances_summary)
         # Unbind Objects (Garbage Collector).
         del ec2m
 
 
-def main() -> None:
-    # Begin.
-    # Parse Cluster Terminator Arguments.
-    ag = ArgumentParser(description="Cluster Terminator Arguments")
-    ag.add_argument("--sparking_cloud_config_file",
-                    type=Path,
-                    required=False,
-                    default=Path("config/sparking_cloud.cfg"),
-                    help="Sparking Cloud Config File (default: config/sparking_cloud.cfg)")
-    ag.add_argument("--cluster_names",
-                    type=str,
-                    required=True,
-                    help="Cluster Names (no default)")
-    parsed_args = ag.parse_args()
-    # Get Cluster Terminator Arguments.
-    sparking_cloud_config_file = Path(parsed_args.sparking_cloud_config_file)
-    cluster_names = str(parsed_args.cluster_names)
+def terminate_cluster(arguments_dict: dict) -> None:
+    # Get Arguments.
+    sparking_cloud_config_file = arguments_dict["sparking_cloud_config_file"]
+    cluster_names = arguments_dict["cluster_names"]
+    # Get Cluster Names List.
     cluster_names_list = cluster_names.split(",")
     # Init Config Parser Object.
     cp = ConfigParser()
@@ -163,9 +141,28 @@ def main() -> None:
     del cp
     del ct
     del logger
-    # End.
-    exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    # Begin.
+    # Parse Cluster Terminator Arguments.
+    ag = ArgumentParser(description="Cluster Terminator Arguments")
+    ag.add_argument("--sparking_cloud_config_file",
+                    type=Path,
+                    required=False,
+                    default=Path("config/sparking_cloud.cfg"),
+                    help="Sparking Cloud Config File (default: config/sparking_cloud.cfg)")
+    ag.add_argument("--cluster_names",
+                    type=str,
+                    required=True,
+                    help="Cluster Names (no default)")
+    parsed_args = ag.parse_args()
+    # Generate Arguments Dict.
+    args_dict = {"sparking_cloud_config_file": Path(parsed_args.sparking_cloud_config_file),
+                 "cluster_names": str(parsed_args.cluster_names)}
+    # Terminate Cluster.
+    terminate_cluster(args_dict)
+    # Unbind Objects (Garbage Collector).
+    del ag
+    # End.
+    exit(0)

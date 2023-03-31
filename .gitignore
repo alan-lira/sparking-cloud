@@ -131,3 +131,11 @@ dmypy.json
 # Pycharm
 .idea
 
+# Sparking Cloud
+application/
+cluster_instances/
+input/
+key/
+logging/
+output/
+

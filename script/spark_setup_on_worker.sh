@@ -59,6 +59,9 @@ spark_version=${1}
 hadoop_version=${2}
 verbose_scripts=${3}
 
+# Suppressing the 'debconf' outputs.
+echo "debconf debconf/frontend select Noninteractive" | sudo debconf-set-selections
+
 # Default 'stdout' and 'stderr' Logs Destination (Verbose Logs).
 stdout_redirection="/dev/tty"
 stderr_redirection="/dev/tty"

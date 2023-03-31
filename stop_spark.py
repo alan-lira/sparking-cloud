@@ -4,7 +4,7 @@ from configparser import ConfigParser
 from pathlib import Path
 from typing import Any
 from util.logging_util import load_logger, log_message
-from util.os_util import find_full_file_name_by_prefix
+from util.os_util import check_if_file_exists, find_full_file_name_by_prefix
 from util.process_util import remotely_execute_command
 from util.sparking_cloud_util import parse_sparking_cloud_config_file
 
@@ -72,6 +72,14 @@ class SparkStopper:
         instance_full_key_name = find_full_file_name_by_prefix(key_root_folder,
                                                                instance_key_name)
         instance_key_file = Path(key_root_folder).joinpath(instance_full_key_name)
+        instance_key_file_exists = check_if_file_exists(instance_key_file)
+        if not instance_key_file_exists:
+            message = "The key '{0}' of instance '{1}' could not be found in the '{2}' folder!" \
+                .format(instance_key_name,
+                        instance_name,
+                        key_root_folder)
+            log_message(logger, message, "INFO")
+            raise FileNotFoundError(message)
         instance_username = instance_dict["username"]
         instance_public_ipv4_address = instance_dict["public_ipv4_address"]
         instance_ssh_port = instance_dict["ssh_port"]
@@ -82,7 +90,7 @@ class SparkStopper:
         spark_version = configuration_rules_settings["spark_version"]
         hadoop_version = configuration_rules_settings["hadoop_version"]
         message = "Stopping Spark on the remote host {0} ({1})...".format(instance_public_ipv4_address, instance_name)
-        log_message(logger, message, "INFO")
+        log_message(logger, message, "DEBUG")
         # Remotely Execute the Spark Stop Master Script.
         spark_home_directory = Path("spark-{0}-bin-hadoop{1}".format(spark_version, hadoop_version))
         spark_scripts_folder = spark_home_directory.joinpath("sbin")
@@ -112,6 +120,14 @@ class SparkStopper:
         instance_full_key_name = find_full_file_name_by_prefix(key_root_folder,
                                                                instance_key_name)
         instance_key_file = Path(key_root_folder).joinpath(instance_full_key_name)
+        instance_key_file_exists = check_if_file_exists(instance_key_file)
+        if not instance_key_file_exists:
+            message = "The key '{0}' of instance '{1}' could not be found in the '{2}' folder!" \
+                .format(instance_key_name,
+                        instance_name,
+                        key_root_folder)
+            log_message(logger, message, "INFO")
+            raise FileNotFoundError(message)
         instance_username = instance_dict["username"]
         instance_public_ipv4_address = instance_dict["public_ipv4_address"]
         instance_ssh_port = instance_dict["ssh_port"]
@@ -122,7 +138,7 @@ class SparkStopper:
         spark_version = configuration_rules_settings["spark_version"]
         hadoop_version = configuration_rules_settings["hadoop_version"]
         message = "Stopping Spark on the remote host {0} ({1})...".format(instance_public_ipv4_address, instance_name)
-        log_message(logger, message, "INFO")
+        log_message(logger, message, "DEBUG")
         # Remotely Execute the Spark Stop Worker Script.
         spark_home_directory = Path("spark-{0}-bin-hadoop{1}".format(spark_version, hadoop_version))
         spark_scripts_folder = spark_home_directory.joinpath("sbin")
@@ -142,25 +158,25 @@ class SparkStopper:
 
     def stop_spark_cluster_tasks(self,
                                  cluster_name: str) -> None:
-        # Get Logger.
-        logger = self.get_attribute("logger")
         # Read Cluster's Instances File.
         instances_list = self.read_instances_file(cluster_name)
-        message = "Stopping Spark on the Cluster '{0}'...".format(cluster_name)
-        log_message(logger, message, "INFO")
         number_of_instances = len(instances_list)
         # Parallel Remotely Stop Spark on Instances (Masters and Workers).
         with ThreadPoolExecutor(max_workers=number_of_instances) as thread_pool_executor:
             for instance_dict in instances_list:
                 instance_name = instance_dict["name"]
                 if "master" in instance_name.lower():
-                    thread_pool_executor.submit(self.stop_spark_on_master_instance,
-                                                instance_dict)
+                    future = thread_pool_executor.submit(self.stop_spark_on_master_instance,
+                                                         instance_dict)
+                    exception = future.exception()
+                    if exception:
+                        raise exception
                 elif "worker" in instance_name.lower():
-                    thread_pool_executor.submit(self.stop_spark_on_worker_instance,
-                                                instance_dict)
-        message = "The Cluster '{0}' has stopped Spark successfully!".format(cluster_name)
-        log_message(logger, message, "INFO")
+                    future = thread_pool_executor.submit(self.stop_spark_on_worker_instance,
+                                                         instance_dict)
+                    exception = future.exception()
+                    if exception:
+                        raise exception
 
     def parallel_stop_spark_clusters(self,
                                      cluster_names: list) -> None:
@@ -168,27 +184,24 @@ class SparkStopper:
         number_of_clusters = len(cluster_names)
         with ThreadPoolExecutor(max_workers=number_of_clusters) as thread_pool_executor:
             for cluster_name in cluster_names:
-                thread_pool_executor.submit(self.stop_spark_cluster_tasks,
-                                            cluster_name)
+                # Get Logger.
+                logger = self.get_attribute("logger")
+                message = "Stopping Spark on the Cluster '{0}'...".format(cluster_name)
+                log_message(logger, message, "INFO")
+                future = thread_pool_executor.submit(self.stop_spark_cluster_tasks,
+                                                     cluster_name)
+                exception = future.exception()
+                if exception:
+                    exit(exception)
+                message = "The Cluster '{0}' has stopped Spark successfully!".format(cluster_name)
+                log_message(logger, message, "INFO")
 
 
-def main() -> None:
-    # Begin.
-    # Parse Cluster Configurator Arguments.
-    ag = ArgumentParser(description="Cluster Configurator Arguments")
-    ag.add_argument("--sparking_cloud_config_file",
-                    type=Path,
-                    required=False,
-                    default=Path("config/sparking_cloud.cfg"),
-                    help="Sparking Cloud Config File (default: config/sparking_cloud.cfg)")
-    ag.add_argument("--cluster_names",
-                    type=str,
-                    required=True,
-                    help="Cluster Names (no default)")
-    parsed_args = ag.parse_args()
-    # Get Cluster Configurator Arguments.
-    sparking_cloud_config_file = Path(parsed_args.sparking_cloud_config_file)
-    cluster_names = str(parsed_args.cluster_names)
+def stop_spark(arguments_dict: dict) -> None:
+    # Get Arguments.
+    sparking_cloud_config_file = arguments_dict["sparking_cloud_config_file"]
+    cluster_names = arguments_dict["cluster_names"]
+    # Get Cluster Names List.
     cluster_names_list = cluster_names.split(",")
     # Init Config Parser Object.
     cp = ConfigParser()
@@ -213,9 +226,28 @@ def main() -> None:
     del cp
     del ss
     del logger
-    # End.
-    exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    # Begin.
+    # Parse Cluster Configurator Arguments.
+    ag = ArgumentParser(description="Cluster Configurator Arguments")
+    ag.add_argument("--sparking_cloud_config_file",
+                    type=Path,
+                    required=False,
+                    default=Path("config/sparking_cloud.cfg"),
+                    help="Sparking Cloud Config File (default: config/sparking_cloud.cfg)")
+    ag.add_argument("--cluster_names",
+                    type=str,
+                    required=True,
+                    help="Cluster Names (no default)")
+    parsed_args = ag.parse_args()
+    # Generate Arguments Dict.
+    args_dict = {"sparking_cloud_config_file": Path(parsed_args.sparking_cloud_config_file),
+                 "cluster_names": str(parsed_args.cluster_names)}
+    # Stop Spark.
+    stop_spark(args_dict)
+    # Unbind Objects (Garbage Collector).
+    del ag
+    # End.
+    exit(0)

@@ -1,6 +1,5 @@
 from botocore import exceptions
 from boto3 import client, resource
-from botocore.exceptions import ClientError
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from socket import AF_INET, SOCK_STREAM, socket
@@ -130,11 +129,14 @@ class EC2Manager:
     @staticmethod
     def is_ec2_instance_running(instance: Any) -> bool:
         ec2_instance_running = False
+        instance_state_name = None
         try:
-            if instance and instance.state["Name"] == "running":
-                ec2_instance_running = True
-        except ClientError:
-            pass  # Instance entry removed by AWS
+            instance_state_name = instance.state["Name"]
+        except AttributeError:
+            # The instance entry was deleted by AWS, as it has been terminated for a while already.
+            pass
+        if instance_state_name == "running":
+            ec2_instance_running = True
         return ec2_instance_running
 
     def get_active_ec2_instances_list(self,
@@ -146,11 +148,26 @@ class EC2Manager:
                 active_ec2_instances_list.append(instance)
         return active_ec2_instances_list
 
+    def get_ec2_instance_state_name(self,
+                                    instance_id: str) -> str:
+        instance = self.get_ec2_instance_from_id(instance_id)
+        try:
+            instance_state_name = instance.state["Name"]
+        except AttributeError:
+            # The instance entry was deleted by AWS, as it has been terminated for a while already.
+            instance_state_name = "deleted_entry"
+        return instance_state_name
+
     def terminate_ec2_instances_list(self,
                                      instances_ids_list: list) -> None:
         if instances_ids_list:
             try:
                 self.ec2_client.terminate_instances(InstanceIds=instances_ids_list)
+                while True:
+                    active_instances_list = self.get_active_ec2_instances_list(instances_ids_list)
+                    if not active_instances_list:
+                        break
+                    sleep(1)
             except exceptions.ClientError as client_error:
                 error_code = client_error.response["Error"]["Code"]
                 if error_code == "InvalidInstanceID.NotFound":

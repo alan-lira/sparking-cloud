@@ -59,6 +59,9 @@ spark_version=${1}
 hadoop_version=${2}
 verbose_scripts=${3}
 
+# Suppressing the 'debconf' outputs.
+echo "debconf debconf/frontend select Noninteractive" | sudo debconf-set-selections
+
 # Default 'stdout' and 'stderr' Logs Destination (Verbose Logs).
 stdout_redirection="/dev/tty"
 stderr_redirection="/dev/tty"
@@ -94,7 +97,7 @@ rm -rf spark-*.tgz \
 1> $stdout_redirection \
 2> $stderr_redirection
 
-#
+# Setting the JAVA_HOME environment variable.
 sed '5 i export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' -i .bashrc
 
 # Script End.

@@ -6,7 +6,7 @@ from typing import Any
 from cloud_manager.ec2_manager import EC2Manager
 from util.aws_config_util import parse_aws_config_file
 from util.logging_util import load_logger, log_message
-from util.os_util import find_full_file_name_by_prefix
+from util.os_util import check_if_file_exists, find_full_file_name_by_prefix
 from util.process_util import execute_command, remotely_execute_command
 from util.sparking_cloud_util import parse_sparking_cloud_config_file
 
@@ -23,6 +23,7 @@ class SparkJobExecutor:
         self.spark_environment_settings = None
         # Other Attributes.
         self.logger = None
+        self.execution_mode = None
 
     def set_attribute(self,
                       attribute_name: str,
@@ -97,6 +98,14 @@ class SparkJobExecutor:
         instance_full_key_name = find_full_file_name_by_prefix(key_root_folder,
                                                                instance_key_name)
         instance_key_file = Path(key_root_folder).joinpath(instance_full_key_name)
+        instance_key_file_exists = check_if_file_exists(instance_key_file)
+        if not instance_key_file_exists:
+            message = "The key '{0}' of instance '{1}' could not be found in the '{2}' folder!" \
+                .format(instance_key_name,
+                        instance_name,
+                        key_root_folder)
+            log_message(logger, message, "INFO")
+            raise FileNotFoundError(message)
         instance_username = instance_dict["username"]
         instance_public_ipv4_address = instance_dict["public_ipv4_address"]
         instance_ssh_port = instance_dict["ssh_port"]
@@ -108,10 +117,25 @@ class SparkJobExecutor:
         message = "Sending Application to the remote host {0} ({1})..." \
             .format(instance_public_ipv4_address,
                     instance_name)
-        log_message(logger, message, "INFO")
+        log_message(logger, message, "DEBUG")
+        # Remotely Create the Applications Root Folder.
+        applications_root_folder = Path("application")
+        remote_command = "mkdir -p {0}".format(applications_root_folder)
+        remotely_execute_command(key_file=instance_key_file,
+                                 username=instance_username,
+                                 public_ipv4_address=instance_public_ipv4_address,
+                                 ssh_port=instance_ssh_port,
+                                 remote_command=remote_command,
+                                 on_new_windows=False,
+                                 request_tty=False,
+                                 max_tries=max_tries,
+                                 time_between_retries_in_seconds=time_between_retries_in_seconds,
+                                 logger=logger,
+                                 logger_level="DEBUG")
         # Remotely Create the Application's Destination Folder.
-        destination_folder = Path("application")
-        remote_command = "mkdir -p {0}".format(destination_folder)
+        application_folder_name = Path(application_folder).name
+        application_destination_folder = applications_root_folder.joinpath(application_folder_name)
+        remote_command = "mkdir -p {0}".format(application_destination_folder)
         remotely_execute_command(key_file=instance_key_file,
                                  username=instance_username,
                                  public_ipv4_address=instance_public_ipv4_address,
@@ -128,7 +152,7 @@ class SparkJobExecutor:
                                                                                application_folder,
                                                                                instance_username,
                                                                                instance_public_ipv4_address,
-                                                                               destination_folder)
+                                                                               application_destination_folder)
         execute_command(command=local_command,
                         on_new_windows=False,
                         max_tries=max_tries,
@@ -148,6 +172,14 @@ class SparkJobExecutor:
         instance_full_key_name = find_full_file_name_by_prefix(key_root_folder,
                                                                instance_key_name)
         instance_key_file = Path(key_root_folder).joinpath(instance_full_key_name)
+        instance_key_file_exists = check_if_file_exists(instance_key_file)
+        if not instance_key_file_exists:
+            message = "The key '{0}' of instance '{1}' could not be found in the '{2}' folder!" \
+                .format(instance_key_name,
+                        instance_name,
+                        key_root_folder)
+            log_message(logger, message, "INFO")
+            raise FileNotFoundError(message)
         instance_username = instance_dict["username"]
         instance_public_ipv4_address = instance_dict["public_ipv4_address"]
         instance_ssh_port = instance_dict["ssh_port"]
@@ -155,14 +187,30 @@ class SparkJobExecutor:
         configuration_rules_settings = self.get_attribute("configuration_rules_settings")
         max_tries = configuration_rules_settings["max_tries"]
         time_between_retries_in_seconds = configuration_rules_settings["time_between_retries_in_seconds"]
+        application_folder = configuration_rules_settings["application_folder"]
         input_folder = configuration_rules_settings["input_folder"]
         message = "Sending Input to the remote host {0} ({1})..." \
             .format(instance_public_ipv4_address,
                     instance_name)
-        log_message(logger, message, "INFO")
-        # Remotely Create the Input's Destination Folder.
-        destination_folder = Path("input")
-        remote_command = "mkdir -p {0}".format(destination_folder)
+        log_message(logger, message, "DEBUG")
+        # Remotely Create the Inputs Root Folder.
+        inputs_root_folder = Path("input")
+        remote_command = "mkdir -p {0}".format(inputs_root_folder)
+        remotely_execute_command(key_file=instance_key_file,
+                                 username=instance_username,
+                                 public_ipv4_address=instance_public_ipv4_address,
+                                 ssh_port=instance_ssh_port,
+                                 remote_command=remote_command,
+                                 on_new_windows=False,
+                                 request_tty=False,
+                                 max_tries=max_tries,
+                                 time_between_retries_in_seconds=time_between_retries_in_seconds,
+                                 logger=logger,
+                                 logger_level="DEBUG")
+        # Remotely Create the Application's Input Destination Folder.
+        application_folder_name = Path(application_folder).name
+        application_input_destination_folder = inputs_root_folder.joinpath(application_folder_name)
+        remote_command = "mkdir -p {0}".format(application_input_destination_folder)
         remotely_execute_command(key_file=instance_key_file,
                                  username=instance_username,
                                  public_ipv4_address=instance_public_ipv4_address,
@@ -179,7 +227,7 @@ class SparkJobExecutor:
                                                                                input_folder,
                                                                                instance_username,
                                                                                instance_public_ipv4_address,
-                                                                               destination_folder)
+                                                                               application_input_destination_folder)
         execute_command(command=local_command,
                         on_new_windows=False,
                         max_tries=max_tries,
@@ -199,6 +247,14 @@ class SparkJobExecutor:
         instance_full_key_name = find_full_file_name_by_prefix(key_root_folder,
                                                                instance_key_name)
         instance_key_file = Path(key_root_folder).joinpath(instance_full_key_name)
+        instance_key_file_exists = check_if_file_exists(instance_key_file)
+        if not instance_key_file_exists:
+            message = "The key '{0}' of instance '{1}' could not be found in the '{2}' folder!" \
+                .format(instance_key_name,
+                        instance_name,
+                        key_root_folder)
+            log_message(logger, message, "INFO")
+            raise FileNotFoundError(message)
         instance_username = instance_dict["username"]
         instance_public_ipv4_address = instance_dict["public_ipv4_address"]
         instance_ssh_port = instance_dict["ssh_port"]
@@ -212,7 +268,7 @@ class SparkJobExecutor:
         master_properties_file = configuration_rules_settings["master_properties_file"]
         application_entry_point = configuration_rules_settings["application_entry_point"]
         application_arguments = configuration_rules_settings["application_arguments"]
-        message = "Launching Spark Application on the remote host {0} ({1})..." \
+        message = "Launching the Spark application on the remote host {0} ({1})..." \
             .format(instance_public_ipv4_address,
                     instance_name)
         log_message(logger, message, "INFO")
@@ -234,7 +290,7 @@ class SparkJobExecutor:
                                  public_ipv4_address=instance_public_ipv4_address,
                                  ssh_port=instance_ssh_port,
                                  remote_command=remote_command,
-                                 on_new_windows=False,
+                                 on_new_windows=True,
                                  request_tty=False,
                                  max_tries=max_tries,
                                  time_between_retries_in_seconds=time_between_retries_in_seconds,
@@ -243,33 +299,42 @@ class SparkJobExecutor:
 
     def execute_spark_job_tasks(self,
                                 cluster_name: str) -> None:
-        # Get Logger.
-        logger = self.get_attribute("logger")
+        # Get Execution Mode.
+        execution_mode = self.get_attribute("execution_mode")
         # Read Cluster's Instances File.
         instances_list = self.read_instances_file(cluster_name)
-        message = "Launching the Spark job on the Cluster '{0}'...".format(cluster_name)
-        log_message(logger, message, "INFO")
         # Get the First Running Master Instance.
         first_running_master_instance_dict = self.get_first_running_master_instance_dict(instances_list)
-        master_public_ipv4_address = first_running_master_instance_dict["public_ipv4_address"]
-        # Parallel Send the Spark Application and Input for Instances (Masters and Workers).
         number_of_instances = len(instances_list)
-        # Parallel Remotely Start Spark on Instances (Masters and Workers).
-        with ThreadPoolExecutor(max_workers=number_of_instances) as thread_pool_executor:
-            for instance_dict in instances_list:
-                instance_name = instance_dict["name"]
-                if "master" in instance_name.lower():
-                    thread_pool_executor.submit(self.send_application_to_instance,
-                                                instance_dict)
-                elif "worker" in instance_name.lower():
-                    thread_pool_executor.submit(self.send_application_to_instance,
-                                                instance_dict)
-                    thread_pool_executor.submit(self.send_input_to_instance,
-                                                instance_dict)
+        if execution_mode == "full":
+            # Parallel Send the Spark Application and Input for Instances (Masters and Workers).
+            with ThreadPoolExecutor(max_workers=number_of_instances) as thread_pool_executor:
+                for instance_dict in instances_list:
+                    instance_name = instance_dict["name"]
+                    if "master" in instance_name.lower():
+                        future = thread_pool_executor.submit(self.send_application_to_instance,
+                                                             instance_dict)
+                        exception = future.exception()
+                        if exception:
+                            raise exception
+                        future = thread_pool_executor.submit(self.send_input_to_instance,
+                                                             instance_dict)
+                        exception = future.exception()
+                        if exception:
+                            raise exception
+                    elif "worker" in instance_name.lower():
+                        future = thread_pool_executor.submit(self.send_application_to_instance,
+                                                             instance_dict)
+                        exception = future.exception()
+                        if exception:
+                            raise exception
+                        future = thread_pool_executor.submit(self.send_input_to_instance,
+                                                             instance_dict)
+                        exception = future.exception()
+                        if exception:
+                            raise exception
         # Launch the Spark Job on the Master Instance.
         self.start_spark_job_on_master_instance(first_running_master_instance_dict)
-        message = "The Cluster '{0}' has launched the Spark job successfully!".format(cluster_name)
-        log_message(logger, message, "INFO")
 
     def parallel_execute_spark_jobs(self,
                                     cluster_names: list) -> None:
@@ -277,27 +342,25 @@ class SparkJobExecutor:
         number_of_clusters = len(cluster_names)
         with ThreadPoolExecutor(max_workers=number_of_clusters) as thread_pool_executor:
             for cluster_name in cluster_names:
-                thread_pool_executor.submit(self.execute_spark_job_tasks,
-                                            cluster_name)
+                # Get Logger.
+                logger = self.get_attribute("logger")
+                message = "Launching the Spark job on the Cluster '{0}'...".format(cluster_name)
+                log_message(logger, message, "INFO")
+                future = thread_pool_executor.submit(self.execute_spark_job_tasks,
+                                                     cluster_name)
+                exception = future.exception()
+                if exception:
+                    exit(exception)
+                message = "The Cluster '{0}' has launched the Spark job successfully!".format(cluster_name)
+                log_message(logger, message, "INFO")
 
 
-def main() -> None:
-    # Begin.
-    # Parse Cluster Configurator Arguments.
-    ag = ArgumentParser(description="Cluster Configurator Arguments")
-    ag.add_argument("--sparking_cloud_config_file",
-                    type=Path,
-                    required=False,
-                    default=Path("config/sparking_cloud.cfg"),
-                    help="Sparking Cloud Config File (default: config/sparking_cloud.cfg)")
-    ag.add_argument("--cluster_names",
-                    type=str,
-                    required=True,
-                    help="Cluster Names (no default)")
-    parsed_args = ag.parse_args()
-    # Get Cluster Configurator Arguments.
-    sparking_cloud_config_file = Path(parsed_args.sparking_cloud_config_file)
-    cluster_names = str(parsed_args.cluster_names)
+def execute_spark_job(arguments_dict: dict) -> None:
+    # Get Arguments.
+    sparking_cloud_config_file = arguments_dict["sparking_cloud_config_file"]
+    cluster_names = arguments_dict["cluster_names"]
+    execution_mode = arguments_dict["execution_mode"]
+    # Get Cluster Names List.
     cluster_names_list = cluster_names.split(",")
     # Init Config Parser Object.
     cp = ConfigParser()
@@ -316,15 +379,41 @@ def main() -> None:
     # Instantiate and Set Logger.
     logger = load_logger(enable_logging, logging_settings)
     sje.set_attribute("logger", logger)
+    # Set Execution Mode.
+    sje.set_attribute("execution_mode", execution_mode)
     # Parallel Execute Spark Jobs.
     sje.parallel_execute_spark_jobs(cluster_names_list)
     # Unbind Objects (Garbage Collector).
     del cp
     del sje
     del logger
-    # End.
-    exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    # Begin.
+    # Parse Cluster Configurator Arguments.
+    ag = ArgumentParser(description="Cluster Configurator Arguments")
+    ag.add_argument("--sparking_cloud_config_file",
+                    type=Path,
+                    required=False,
+                    default=Path("config/sparking_cloud.cfg"),
+                    help="Sparking Cloud Config File (default: config/sparking_cloud.cfg)")
+    ag.add_argument("--cluster_names",
+                    type=str,
+                    required=True,
+                    help="Cluster Names (no default)")
+    ag.add_argument("--execution_mode",
+                    type=str,
+                    required=True,
+                    help="Execution Mode (e.g., full)")
+    parsed_args = ag.parse_args()
+    # Generate Arguments Dict.
+    args_dict = {"sparking_cloud_config_file": Path(parsed_args.sparking_cloud_config_file),
+                 "cluster_names": str(parsed_args.cluster_names),
+                 "execution_mode": str(parsed_args.execution_mode)}
+    # Execute Spark Job.
+    execute_spark_job(args_dict)
+    # Unbind Objects (Garbage Collector).
+    del ag
+    # End.
+    exit(0)
