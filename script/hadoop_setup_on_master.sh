@@ -28,7 +28,7 @@
 number_of_provided_arguments=$#
 
 # Set Required Arguments Array.
-required_arguments_array=("Spark Version (String)",
+required_arguments_array=("Hadoop Version (String)",
                           "Verbose Standard Output (stdout) and Standard Error (stderr) Logs [Bool]")
 number_of_required_arguments=${#required_arguments_array[@]}
 
@@ -54,7 +54,7 @@ if [ $number_of_provided_arguments -lt $number_of_required_arguments ]; then
 fi
 
 # Script Arguments.
-spark_version=${1}
+hadoop_version=${1}
 verbose_scripts=${2}
 
 # Suppressing the 'debconf' outputs.
@@ -73,38 +73,20 @@ fi
 # Steps Counter.
 step=0
 
-# Updating the 'available packages' list and installing 'Scala'...
+# Downloading and extracting 'Hadoop'...
 ((step++))
-echo -e "\n-------\n$step) Updating the 'available packages' list and installing 'Scala'..." \
+echo -e "\n-------\n$step) Downloading and extracting 'Hadoop (v.$hadoop_version)'..." \
 1> $stdout_redirection \
 2> $stderr_redirection
-sudo apt-get update && \
-sudo apt-get install scala -y && \
-java --version \
-1> $stdout_redirection \
-2> $stderr_redirection
-
-# Downloading and extracting 'Spark Without Hadoop'...
-((step++))
-echo -e "\n-------\n$step) Downloading and extracting 'Spark (v.$spark_version)'..." \
-1> $stdout_redirection \
-2> $stderr_redirection
-wget -q https://archive.apache.org/dist/spark/spark-$spark_version/spark-$spark_version-bin-without-hadoop.tgz && \
-tar xvf spark-$spark_version-bin-without-hadoop.tgz && \
-rm -rf spark-*.tgz \
+wget -q https://archive.apache.org/dist/hadoop/common/hadoop-$hadoop_version/hadoop-$hadoop_version.tar.gz && \
+tar xzf hadoop-$hadoop_version.tar.gz && \
+rm -rf hadoop-*.tar.gz \
 1> $stdout_redirection \
 2> $stderr_redirection
 
-# Setting the JAVA_HOME environment variable.
-sed '7 i export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' -i .bashrc
-sed '8 i export PATH=$PATH:$JAVA_HOME/bin' -i .bashrc
-
-# Setting the SPARK_HOME environment variable.
-sed "9 i export SPARK_HOME=~/spark-${spark_version}-bin-without-hadoop" -i .bashrc
-sed '10 i export PATH=$PATH:$SPARK_HOME/bin' -i .bashrc
-
-# Setting the SPARK_DIST_CLASSPATH environment variable.
-sed '11 i export SPARK_DIST_CLASSPATH=$(hadoop classpath)' -i .bashrc
+# Setting the HADOOP_HOME environment variable.
+sed "5 i export HADOOP_HOME=~/hadoop-${hadoop_version}" -i .bashrc
+sed '6 i export PATH=$PATH:$HADOOP_HOME/bin' -i .bashrc
 
 # Script End.
 exit 0

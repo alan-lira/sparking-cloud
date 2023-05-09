@@ -1,11 +1,11 @@
 from argparse import ArgumentParser
 from botocore.exceptions import ClientError
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Any
 from cloud_manager.ec2_manager import EC2Manager
-from util.aws_config_util import parse_aws_config_file, parse_aws_credentials_file
+from util.aws_config_util import parse_aws_config_file
 from util.config_parser_util import parse_config_section
 from util.logging_util import load_logger, log_message
 from util.os_util import check_if_file_exists, remove_file
@@ -43,16 +43,14 @@ class ClusterBuilder:
                                    ec2m: EC2Manager) -> None:
         # Get Logger.
         logger = self.get_attribute("logger")
-        with ThreadPoolExecutor(max_workers=1) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             message = "Building the Cluster '{0}'...".format(cluster_name)
             log_message(logger, message, "INFO")
             future = thread_pool_executor.submit(self.build_cluster_tasks,
                                                  cluster_settings,
                                                  config_parser,
                                                  ec2m)
-            exception = future.exception()
-            if exception:
-                exit(exception)
+            wait([future])
             message = "The Cluster '{0}' was build successfully!".format(cluster_name)
             log_message(logger, message, "INFO")
 
@@ -154,16 +152,14 @@ class ClusterBuilder:
                                              master_instances_settings_dict: dict,
                                              ec2m: EC2Manager) -> None:
         number_of_master_instances = master_instances_settings_dict["number_of_master_instances"]
-        with ThreadPoolExecutor(max_workers=number_of_master_instances) as thread_pool_executor:
-            for master_id in range(0, number_of_master_instances):
-                future = thread_pool_executor.submit(self.create_spark_master_on_aws_tasks,
-                                                     cluster_name,
-                                                     master_id,
-                                                     master_instances_settings_dict,
-                                                     ec2m)
-                exception = future.exception()
-                if exception:
-                    raise exception
+        if number_of_master_instances > 0:
+            with ThreadPoolExecutor() as thread_pool_executor:
+                for master_id in range(0, number_of_master_instances):
+                    thread_pool_executor.submit(self.create_spark_master_on_aws_tasks,
+                                                cluster_name,
+                                                master_id,
+                                                master_instances_settings_dict,
+                                                ec2m)
 
     def create_spark_worker_on_aws_tasks(self,
                                          cluster_name: str,
@@ -214,16 +210,14 @@ class ClusterBuilder:
                                              worker_instances_settings_dict: dict,
                                              ec2m: EC2Manager) -> None:
         number_of_worker_instances = worker_instances_settings_dict["number_of_worker_instances"]
-        with ThreadPoolExecutor(max_workers=number_of_worker_instances) as thread_pool_executor:
-            for worker_id in range(0, number_of_worker_instances):
-                future = thread_pool_executor.submit(self.create_spark_worker_on_aws_tasks,
-                                                     cluster_name,
-                                                     worker_id,
-                                                     worker_instances_settings_dict,
-                                                     ec2m)
-                exception = future.exception()
-                if exception:
-                    raise exception
+        if number_of_worker_instances > 0:
+            with ThreadPoolExecutor() as thread_pool_executor:
+                for worker_id in range(0, number_of_worker_instances):
+                    thread_pool_executor.submit(self.create_spark_worker_on_aws_tasks,
+                                                cluster_name,
+                                                worker_id,
+                                                worker_instances_settings_dict,
+                                                ec2m)
 
     def build_cluster_tasks(self,
                             cluster_settings: dict,
@@ -232,33 +226,25 @@ class ClusterBuilder:
         cluster_name = cluster_settings["cluster_name"]
         master_instances_settings_list = cluster_settings["master_instances_settings"]
         worker_instances_settings_list = cluster_settings["worker_instances_settings"]
-        # Get Number of Instances.
-        number_of_instances = len(master_instances_settings_list) + len(worker_instances_settings_list)
-        with ThreadPoolExecutor(max_workers=number_of_instances) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             # Parallel Launch Master Instances.
             for master_instances_settings in master_instances_settings_list:
                 master_instances_settings_dict = parse_config_section(config_parser,
                                                                       master_instances_settings + " Settings")
                 if "AWS" in master_instances_settings:
-                    future = thread_pool_executor.submit(self.parallel_create_spark_masters_on_aws,
-                                                         cluster_name,
-                                                         master_instances_settings_dict,
-                                                         ec2m)
-                    exception = future.exception()
-                    if exception:
-                        raise exception
+                    thread_pool_executor.submit(self.parallel_create_spark_masters_on_aws,
+                                                cluster_name,
+                                                master_instances_settings_dict,
+                                                ec2m)
             # Parallel Launch Worker Instances.
             for worker_instances_settings in worker_instances_settings_list:
                 worker_instances_settings_dict = parse_config_section(config_parser,
                                                                       worker_instances_settings + " Settings")
                 if "AWS" in worker_instances_settings:
-                    future = thread_pool_executor.submit(self.parallel_create_spark_workers_on_aws,
-                                                         cluster_name,
-                                                         worker_instances_settings_dict,
-                                                         ec2m)
-                    exception = future.exception()
-                    if exception:
-                        raise exception
+                    thread_pool_executor.submit(self.parallel_create_spark_workers_on_aws,
+                                                cluster_name,
+                                                worker_instances_settings_dict,
+                                                ec2m)
 
     def parallel_build_clusters_tasks(self,
                                       cluster_name: str,
@@ -310,33 +296,26 @@ class ClusterBuilder:
         cluster_instances_root_folder = self.get_attribute("general_settings")["cluster_instances_root_folder"]
         # Get Cloud Provider Names.
         cloud_provider_names_list = self.get_attribute("general_settings")["cloud_provider_names"]
-        # Get Number of Clusters.
-        number_of_clusters = len(clusters_settings)
         ec2m = None
         if "AWS" in cloud_provider_names_list:
             # Parse AWS Config and Credentials Files.
             aws_config_file_path = self.get_attribute("aws_settings")["config_file_path"]
             aws_region, aws_output = parse_aws_config_file(aws_config_file_path)
-            aws_credentials_file_path = self.get_attribute("aws_settings")["credentials_file_path"]
-            aws_access_key_id, aws_secret_access_key = parse_aws_credentials_file(aws_credentials_file_path)
             # Get AWS Service Setting (EC2).
             aws_service = self.get_attribute("aws_settings")["service"]
             # Init AWS EC2Manager Object.
             ec2m = EC2Manager(service_name=aws_service, region_name=aws_region)
-        with ThreadPoolExecutor(max_workers=number_of_clusters) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             for cluster_settings in clusters_settings:
                 cluster_name = cluster_settings["cluster_name"]
                 cluster_instances_file = Path(cluster_instances_root_folder).joinpath(cluster_name)
-                future = thread_pool_executor.submit(self.parallel_build_clusters_tasks,
-                                                     cluster_name,
-                                                     cluster_settings,
-                                                     cluster_instances_root_folder,
-                                                     cluster_instances_file,
-                                                     config_parser,
-                                                     ec2m)
-                exception = future.exception()
-                if exception:
-                    exit(exception)
+                thread_pool_executor.submit(self.parallel_build_clusters_tasks,
+                                            cluster_name,
+                                            cluster_settings,
+                                            cluster_instances_root_folder,
+                                            cluster_instances_file,
+                                            config_parser,
+                                            ec2m)
         # Unbind Objects (Garbage Collector).
         del ec2m
 

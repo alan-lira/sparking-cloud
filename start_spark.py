@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Any
@@ -7,7 +7,7 @@ from cloud_manager.ec2_manager import EC2Manager
 from util.aws_config_util import parse_aws_config_file
 from util.logging_util import load_logger, log_message
 from util.os_util import check_if_file_exists, find_full_file_name_by_prefix
-from util.process_util import execute_command, remotely_execute_command
+from util.process_util import remotely_execute_command
 from util.sparking_cloud_util import parse_sparking_cloud_config_file
 
 
@@ -112,53 +112,20 @@ class SparkStarter:
         configuration_rules_settings = self.get_attribute("configuration_rules_settings")
         max_tries = configuration_rules_settings["max_tries"]
         time_between_retries_in_seconds = configuration_rules_settings["time_between_retries_in_seconds"]
-        spark_version = configuration_rules_settings["spark_version"]
-        hadoop_version = configuration_rules_settings["hadoop_version"]
         master_port = configuration_rules_settings["master_port"]
         master_webui_port = configuration_rules_settings["master_webui_port"]
-        master_properties_file = configuration_rules_settings["master_properties_file"]
-        master_scheduler_file = configuration_rules_settings["master_scheduler_file"]
         message = "Starting Spark on the remote host {0} ({1})...".format(instance_public_ipv4_address, instance_name)
         log_message(logger, message, "DEBUG")
-        # Remotely Create the Spark Defaults Conf File's Destination Folder.
-        destination_folder = Path("config")
-        remote_command = "mkdir -p {0}".format(destination_folder)
-        remotely_execute_command(key_file=instance_key_file,
-                                 username=instance_username,
-                                 public_ipv4_address=instance_public_ipv4_address,
-                                 ssh_port=instance_ssh_port,
-                                 remote_command=remote_command,
-                                 on_new_windows=False,
-                                 request_tty=False,
-                                 max_tries=max_tries,
-                                 time_between_retries_in_seconds=time_between_retries_in_seconds,
-                                 logger=logger,
-                                 logger_level="DEBUG")
-        # Send the Spark Defaults and the Spark Scheduler Allocation Files to the Remote Host.
-        local_command = "rsync -q -e 'ssh -i {0}' -r {1} {2} {3}@{4}:~/{5}".format(instance_key_file,
-                                                                                   master_properties_file,
-                                                                                   master_scheduler_file,
-                                                                                   instance_username,
-                                                                                   instance_public_ipv4_address,
-                                                                                   destination_folder)
-        execute_command(command=local_command,
-                        on_new_windows=False,
-                        max_tries=max_tries,
-                        time_between_retries_in_seconds=time_between_retries_in_seconds,
-                        logger=logger,
-                        logger_level="DEBUG")
         # Remotely Execute the Spark Start Master Script.
-        spark_home_directory = Path("spark-{0}-bin-hadoop{1}".format(spark_version, hadoop_version))
+        spark_home_directory = Path("\\$SPARK_HOME")
         spark_scripts_folder = spark_home_directory.joinpath("sbin")
         spark_start_master_script_file = spark_scripts_folder.joinpath("start-master.sh")
         master_port_option = "--port {0}".format(master_port)
         master_webui_port_option = "--webui-port {0}".format(master_webui_port)
-        master_properties_file_option = "--properties-file {0}".format(master_properties_file)
-        remote_command = "bash {0} {1} {2} {3}" \
+        remote_command = "bash {0} {1} {2}" \
             .format(spark_start_master_script_file,
                     master_port_option,
-                    master_webui_port_option,
-                    master_properties_file_option)
+                    master_webui_port_option)
         remotely_execute_command(key_file=instance_key_file,
                                  username=instance_username,
                                  public_ipv4_address=instance_public_ipv4_address,
@@ -283,8 +250,6 @@ class SparkStarter:
         configuration_rules_settings = self.get_attribute("configuration_rules_settings")
         max_tries = configuration_rules_settings["max_tries"]
         time_between_retries_in_seconds = configuration_rules_settings["time_between_retries_in_seconds"]
-        spark_version = configuration_rules_settings["spark_version"]
-        hadoop_version = configuration_rules_settings["hadoop_version"]
         master_port = configuration_rules_settings["master_port"]
         worker_cores = configuration_rules_settings["worker_cores"]
         if worker_cores == "maximum":
@@ -295,37 +260,10 @@ class SparkStarter:
         worker_memory_unit = configuration_rules_settings["worker_memory_unit"]
         worker_port = configuration_rules_settings["worker_port"]
         worker_webui_port = configuration_rules_settings["worker_webui_port"]
-        worker_properties_file = configuration_rules_settings["worker_properties_file"]
         message = "Starting Spark on the remote host {0} ({1})...".format(instance_public_ipv4_address, instance_name)
         log_message(logger, message, "DEBUG")
-        # Remotely Create the Spark Defaults Conf File's Destination Folder.
-        destination_folder = Path("config")
-        remote_command = "mkdir -p {0}".format(destination_folder)
-        remotely_execute_command(key_file=instance_key_file,
-                                 username=instance_username,
-                                 public_ipv4_address=instance_public_ipv4_address,
-                                 ssh_port=instance_ssh_port,
-                                 remote_command=remote_command,
-                                 on_new_windows=False,
-                                 request_tty=False,
-                                 max_tries=max_tries,
-                                 time_between_retries_in_seconds=time_between_retries_in_seconds,
-                                 logger=logger,
-                                 logger_level="DEBUG")
-        # Send the Spark Defaults File to the Remote Host.
-        local_command = "rsync -q -e 'ssh -i {0}' -r {1} {2}@{3}:~/{4}".format(instance_key_file,
-                                                                               worker_properties_file,
-                                                                               instance_username,
-                                                                               instance_public_ipv4_address,
-                                                                               destination_folder)
-        execute_command(command=local_command,
-                        on_new_windows=False,
-                        max_tries=max_tries,
-                        time_between_retries_in_seconds=time_between_retries_in_seconds,
-                        logger=logger,
-                        logger_level="DEBUG")
         # Remotely Execute the Spark Start Worker Script.
-        spark_home_directory = Path("spark-{0}-bin-hadoop{1}".format(spark_version, hadoop_version))
+        spark_home_directory = Path("\\$SPARK_HOME")
         spark_scripts_folder = spark_home_directory.joinpath("sbin")
         spark_start_worker_script_file = spark_scripts_folder.joinpath("start-worker.sh")
         master_url_option = "spark://{0}:{1}".format(master_public_ipv4_address, master_port)
@@ -333,15 +271,13 @@ class SparkStarter:
         worker_memory_option = "--memory {0}{1}".format(worker_memory, worker_memory_unit[0])
         worker_port_option = "--port {0}".format(worker_port)
         worker_webui_port_option = "--webui-port {0}".format(worker_webui_port)
-        worker_properties_file_option = "--properties-file {0}".format(worker_properties_file)
-        remote_command = "bash {0} {1} {2} {3} {4} {5} {6}" \
+        remote_command = "bash {0} {1} {2} {3} {4} {5}" \
             .format(spark_start_worker_script_file,
                     master_url_option,
                     worker_cores_option,
                     worker_memory_option,
                     worker_port_option,
-                    worker_webui_port_option,
-                    worker_properties_file_option)
+                    worker_webui_port_option)
         remotely_execute_command(key_file=instance_key_file,
                                  username=instance_username,
                                  public_ipv4_address=instance_public_ipv4_address,
@@ -358,33 +294,24 @@ class SparkStarter:
                                   cluster_name: str) -> None:
         # Read Cluster's Instances File.
         instances_list = self.read_instances_file(cluster_name)
-        number_of_instances = len(instances_list)
         # Get the First Running Master Instance.
         first_running_master_instance_dict = self.get_first_running_master_instance_dict(instances_list)
         master_public_ipv4_address = first_running_master_instance_dict["public_ipv4_address"]
         # Parallel Remotely Start Spark on Instances (Masters and Workers).
-        with ThreadPoolExecutor(max_workers=number_of_instances) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             for instance_dict in instances_list:
                 instance_name = instance_dict["name"]
                 if "master" in instance_name.lower():
-                    future = thread_pool_executor.submit(self.start_spark_on_master_instance,
-                                                         instance_dict)
-                    exception = future.exception()
-                    if exception:
-                        raise exception
+                    thread_pool_executor.submit(self.start_spark_on_master_instance,
+                                                instance_dict)
                 elif "worker" in instance_name.lower():
-                    future = thread_pool_executor.submit(self.start_spark_on_worker_instance,
-                                                         instance_dict,
-                                                         master_public_ipv4_address)
-                    exception = future.exception()
-                    if exception:
-                        raise exception
+                    thread_pool_executor.submit(self.start_spark_on_worker_instance,
+                                                instance_dict,
+                                                master_public_ipv4_address)
 
     def parallel_start_spark_clusters(self,
                                       cluster_names: list) -> None:
-        # Get Number of Clusters.
-        number_of_clusters = len(cluster_names)
-        with ThreadPoolExecutor(max_workers=number_of_clusters) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             for cluster_name in cluster_names:
                 # Get Logger.
                 logger = self.get_attribute("logger")
@@ -392,9 +319,7 @@ class SparkStarter:
                 log_message(logger, message, "INFO")
                 future = thread_pool_executor.submit(self.start_spark_cluster_tasks,
                                                      cluster_name)
-                exception = future.exception()
-                if exception:
-                    exit(exception)
+                wait([future])
                 message = "The Cluster '{0}' has started Spark successfully!".format(cluster_name)
                 log_message(logger, message, "INFO")
 

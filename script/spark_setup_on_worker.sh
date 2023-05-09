@@ -29,7 +29,6 @@ number_of_provided_arguments=$#
 
 # Set Required Arguments Array.
 required_arguments_array=("Spark Version (String)",
-                          "Hadoop Version (String)",
                           "Verbose Standard Output (stdout) and Standard Error (stderr) Logs [Bool]")
 number_of_required_arguments=${#required_arguments_array[@]}
 
@@ -56,15 +55,14 @@ fi
 
 # Script Arguments.
 spark_version=${1}
-hadoop_version=${2}
-verbose_scripts=${3}
+verbose_scripts=${2}
 
 # Suppressing the 'debconf' outputs.
 echo "debconf debconf/frontend select Noninteractive" | sudo debconf-set-selections
 
 # Default 'stdout' and 'stderr' Logs Destination (Verbose Logs).
-stdout_redirection="/dev/tty"
-stderr_redirection="/dev/tty"
+stdout_redirection="/dev/stdout"
+stderr_redirection="/dev/stderr"
 
 # If 'verbose_scripts' == No, Set 'stdout' and 'stderr' Logs Destination to Null (Silenced Logs).
 if [ "$verbose_scripts" = False ]; then
@@ -86,16 +84,27 @@ java --version \
 1> $stdout_redirection \
 2> $stderr_redirection
 
-# Downloading and extracting 'Spark + Hadoop'...
+# Downloading and extracting 'Spark Without Hadoop'...
 ((step++))
-echo -e "\n-------\n$step) Downloading and extracting 'Spark (v.$spark_version) + Hadoop (v.$hadoop_version)'..." \
+echo -e "\n-------\n$step) Downloading and extracting 'Spark (v.$spark_version)'..." \
 1> $stdout_redirection \
 2> $stderr_redirection
-wget -q https://archive.apache.org/dist/spark/spark-$spark_version/spark-$spark_version-bin-hadoop$hadoop_version.tgz && \
-tar xvf spark-$spark_version-bin-hadoop$hadoop_version.tgz && \
+wget -q https://archive.apache.org/dist/spark/spark-$spark_version/spark-$spark_version-bin-without-hadoop.tgz && \
+tar xvf spark-$spark_version-bin-without-hadoop.tgz && \
 rm -rf spark-*.tgz \
 1> $stdout_redirection \
 2> $stderr_redirection
+
+# Setting the JAVA_HOME environment variable.
+sed '7 i export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' -i .bashrc
+sed '8 i export PATH=$PATH:$JAVA_HOME/bin' -i .bashrc
+
+# Setting the SPARK_HOME environment variable.
+sed "9 i export SPARK_HOME=~/spark-${spark_version}-bin-without-hadoop" -i .bashrc
+sed '10 i export PATH=$PATH:$SPARK_HOME/bin' -i .bashrc
+
+# Setting the SPARK_DIST_CLASSPATH environment variable.
+sed '11 i export SPARK_DIST_CLASSPATH=$(hadoop classpath)' -i .bashrc
 
 # Script End.
 exit 0

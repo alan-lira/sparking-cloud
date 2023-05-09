@@ -118,7 +118,7 @@ class EC2Manager:
 
     def wait_for_ec2_instances_to_be_alive(self,
                                            instances_list: list) -> None:
-        with ThreadPoolExecutor(max_workers=len(instances_list)) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             for instance_dict in instances_list:
                 thread_pool_executor.submit(self.wait_for_ec2_instance_to_be_alive, str(instance_dict["id"]))
 
@@ -143,19 +143,28 @@ class EC2Manager:
                                       instances_id_list: list) -> list:
         active_ec2_instances_list = []
         for instance_id in instances_id_list:
-            instance = self.get_ec2_instance_from_id(instance_id)
-            if self.is_ec2_instance_running(instance):
-                active_ec2_instances_list.append(instance)
+            try:
+                instance = self.get_ec2_instance_from_id(instance_id)
+                if self.is_ec2_instance_running(instance):
+                    active_ec2_instances_list.append(instance)
+            except Exception as ex:
+                exception_type = type(ex).__name__
+                if exception_type in ["ClientError", "AttributeError"]:
+                    # The instance entry was deleted by AWS, as it has been terminated for a while already.
+                    pass
         return active_ec2_instances_list
 
     def get_ec2_instance_state_name(self,
                                     instance_id: str) -> str:
-        instance = self.get_ec2_instance_from_id(instance_id)
+        instance_state_name = None
         try:
+            instance = self.get_ec2_instance_from_id(instance_id)
             instance_state_name = instance.state["Name"]
-        except AttributeError:
-            # The instance entry was deleted by AWS, as it has been terminated for a while already.
-            instance_state_name = "deleted_entry"
+        except Exception as ex:
+            exception_type = type(ex).__name__
+            if exception_type in ["ClientError", "AttributeError"]:
+                # The instance entry was deleted by AWS, as it has been terminated for a while already.
+                instance_state_name = "deleted_entry"
         return instance_state_name
 
     def terminate_ec2_instances_list(self,

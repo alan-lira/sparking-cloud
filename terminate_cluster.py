@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from configparser import ConfigParser
 from pathlib import Path
 from typing import Any
@@ -71,8 +71,6 @@ class ClusterTerminator:
                                     cluster_names: list) -> None:
         # Get Cloud Provider Names.
         cloud_provider_names_list = self.get_attribute("general_settings")["cloud_provider_names"]
-        # Get Number of Clusters.
-        number_of_clusters = len(cluster_names)
         ec2m = None
         # Load EC2 Manager (If Any EC2 Instance Belongs to the Cluster).
         if "AWS" in cloud_provider_names_list:
@@ -83,7 +81,7 @@ class ClusterTerminator:
             aws_service = self.get_attribute("aws_settings")["service"]
             # Init AWS EC2Manager Object.
             ec2m = EC2Manager(service_name=aws_service, region_name=aws_region)
-        with ThreadPoolExecutor(max_workers=number_of_clusters) as thread_pool_executor:
+        with ThreadPoolExecutor() as thread_pool_executor:
             for cluster_name in cluster_names:
                 # Get Logger.
                 logger = self.get_attribute("logger")
@@ -96,9 +94,7 @@ class ClusterTerminator:
                 future = thread_pool_executor.submit(self.terminate_cluster_tasks,
                                                      cluster_name,
                                                      ec2m)
-                exception = future.exception()
-                if exception:
-                    exit(exception)
+                wait([future])
                 message = "The Cluster '{0}' was terminated successfully!".format(cluster_name)
                 log_message(logger, message, "INFO")
                 # Read the Cluster's Instances File.
