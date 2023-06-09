@@ -466,22 +466,26 @@ class ClusterConfigurator:
                 instance_public_ipv4_address = instance_dict["public_ipv4_address"]
                 thread_pool_executor.submit(self.store_instance_public_key_on_known_hosts,
                                             instance_public_ipv4_address)
-        # Parallel Remotely Setup Spark on Instances (Masters and Workers).
-        with ThreadPoolExecutor() as thread_pool_executor:
-            for instance_dict in instances_list:
-                instance_name = instance_dict["name"]
-                if "master" in instance_name.lower():
-                    if install_hadoop:
+        # Parallel Remotely Setup Hadoop on Instances (Masters and Workers).
+        if install_hadoop:
+            with ThreadPoolExecutor() as thread_pool_executor:
+                for instance_dict in instances_list:
+                    instance_name = instance_dict["name"]
+                    if "master" in instance_name.lower():
                         thread_pool_executor.submit(self.setup_hadoop_on_master_instance,
                                                     instance_dict)
-                    if install_spark:
-                        thread_pool_executor.submit(self.setup_spark_on_master_instance,
-                                                    instance_dict)
-                elif "worker" in instance_name.lower():
-                    if install_hadoop:
+                    elif "worker" in instance_name.lower():
                         thread_pool_executor.submit(self.setup_hadoop_on_worker_instance,
                                                     instance_dict)
-                    if install_spark:
+        # Parallel Remotely Setup Spark on Instances (Masters and Workers).
+        if install_spark:
+            with ThreadPoolExecutor() as thread_pool_executor:
+                for instance_dict in instances_list:
+                    instance_name = instance_dict["name"]
+                    if "master" in instance_name.lower():
+                        thread_pool_executor.submit(self.setup_spark_on_master_instance,
+                                                    instance_dict)
+                    elif "worker" in instance_name.lower():
                         thread_pool_executor.submit(self.setup_spark_on_worker_instance,
                                                     instance_dict)
 

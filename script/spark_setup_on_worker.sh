@@ -96,15 +96,15 @@ rm -rf spark-*.tgz \
 2> $stderr_redirection
 
 # Setting the JAVA_HOME environment variable.
-sed '7 i export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' -i .bashrc
-sed '8 i export PATH=$PATH:$JAVA_HOME/bin' -i .bashrc
+sed '3 i export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64' -i .bashrc
+sed '4 i export PATH=$PATH:$JAVA_HOME/bin' -i .bashrc
 
 # Setting the SPARK_HOME environment variable.
-sed "9 i export SPARK_HOME=~/spark-${spark_version}-bin-without-hadoop" -i .bashrc
-sed '10 i export PATH=$PATH:$SPARK_HOME/bin' -i .bashrc
+sed "5 i export SPARK_HOME=~/spark-${spark_version}-bin-without-hadoop" -i .bashrc
+sed '6 i export PATH=$PATH:$SPARK_HOME/bin' -i .bashrc
 
 # Setting the SPARK_DIST_CLASSPATH environment variable.
-sed '11 i export SPARK_DIST_CLASSPATH=$(hadoop classpath)' -i .bashrc
+sed '7 i export SPARK_DIST_CLASSPATH=$(hadoop classpath)' -i .bashrc
 
 # Script End.
 exit 0

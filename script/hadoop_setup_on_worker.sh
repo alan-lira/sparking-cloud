@@ -85,8 +85,8 @@ rm -rf hadoop-*.tar.gz \
 2> $stderr_redirection
 
 # Setting the HADOOP_HOME environment variable.
-sed "5 i export HADOOP_HOME=~/hadoop-${hadoop_version}" -i .bashrc
-sed '6 i export PATH=$PATH:$HADOOP_HOME/bin' -i .bashrc
+sed "1 i export HADOOP_HOME=~/hadoop-${hadoop_version}" -i .bashrc
+sed '2 i export PATH=$PATH:$HADOOP_HOME/bin' -i .bashrc
 
 # Script End.
 exit 0
