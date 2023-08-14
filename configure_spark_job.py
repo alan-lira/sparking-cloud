@@ -236,11 +236,11 @@ class SparkJobConfigurator:
                                  logger=logger,
                                  logger_level="DEBUG")
         # Send the Application to the Remote Host.
-        local_command = "rsync -q -e 'ssh -i {0}' -r {1} {2}@{3}:~/{4}".format(instance_key_file,
-                                                                               application_folder,
-                                                                               instance_username,
-                                                                               instance_public_ipv4_address,
-                                                                               application_destination_folder)
+        local_command = "rsync -q -e 'ssh -i {0}' -r {1}/* {2}@{3}:~/{4}".format(instance_key_file,
+                                                                                 application_folder,
+                                                                                 instance_username,
+                                                                                 instance_public_ipv4_address,
+                                                                                 application_destination_folder)
         execute_command(command=local_command,
                         on_new_windows=False,
                         max_tries=max_tries,
@@ -332,7 +332,8 @@ class SparkJobConfigurator:
         # Get Input Folder.
         send_local_input_folder = self.get_attribute("configuration_rules_settings")["send_local_input_folder"]
         if configuration_mode == "full":
-            # Parallel Send the Spark Application and Input for Instances (Masters and Workers).
+            # Parallel Send the Spark Application, Settings Files, and Input Files for Master Instance.
+            # Parallel Send the Spark Application and Input Files for Worker Instances.
             with ThreadPoolExecutor() as thread_pool_executor:
                 for instance_dict in instances_list:
                     instance_name = instance_dict["name"]

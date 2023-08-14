@@ -137,7 +137,7 @@ class SparkJobSubmitter:
                                  public_ipv4_address=instance_public_ipv4_address,
                                  ssh_port=instance_ssh_port,
                                  remote_command=remote_command,
-                                 on_new_windows=True,
+                                 on_new_windows=False,
                                  request_tty=False,
                                  max_tries=max_tries,
                                  time_between_retries_in_seconds=time_between_retries_in_seconds,
