@@ -165,7 +165,7 @@ class SparkStarter:
         configuration_rules_settings = self.get_attribute("configuration_rules_settings")
         max_tries = configuration_rules_settings["max_tries"]
         time_between_retries_in_seconds = configuration_rules_settings["time_between_retries_in_seconds"]
-        remote_command = "grep 'cpu cores' /proc/cpuinfo | awk '{n+=\\$4} END {print n}'"
+        remote_command = "lscpu | grep '^CPU(s):' | grep -o '[0-9]\\+'"
         process_stdout = remotely_execute_command(key_file=instance_key_file,
                                                   username=instance_username,
                                                   public_ipv4_address=instance_public_ipv4_address,
